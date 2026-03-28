@@ -1,4 +1,5 @@
 #include <bits/stdc++.h>
+
 using namespace std;
 
 // struct untuk point
@@ -9,19 +10,21 @@ struct VectorV{
 struct Face{
     int i,j,k;
 };
+using ll = long long;
 int countV = 0;
 vector<VectorV> vertices;
 vector<Face> faces;
 vector<vector<int>> resFaceIds;
 vector<VectorV> voxelVertices;
 vector<Face> voxelFaces;
-vector<int> statTerbentuk(maxDepth + 1, 0);
-vector<int> statTidakDitelusuri(maxDepth + 1, 0);
 int maxDepth;
+vector<ll> statTerbentuk;
+vector<ll> statTidakDitelusuri;
+int finalDepth = 0;
 bool loadObject(const string& path, vector<VectorV> &resVertices, vector<Face> &resFaces){
     ifstream file(path);
     if(!file.is_open()){
-        cout << "gagal" << endl;
+        cout << "Gagal Membuka file" << endl;
         return false;
     }
 
@@ -30,22 +33,38 @@ bool loadObject(const string& path, vector<VectorV> &resVertices, vector<Face> &
         stringstream ss(line);
         string pref;
         ss >> pref;
+        string sisa;
+
         if(pref == "#" ||  pref == "g") continue;
        
         if(pref == "v"){
             VectorV vertex;
-            ss >> vertex.x >> vertex.y >> vertex.z;
-            resVertices.push_back(vertex);
+            if(ss >> vertex.x >> vertex.y >> vertex.z){
+                if(ss >> sisa) {cout << "Gagal : Format data vertex pada file.obj tidak sesuai" << endl; return false;}
+                resVertices.push_back(vertex);
+            }
+            else{
+                cout << "Format vertex tidak sesuai " << endl;
+                return false;
+            }
         }
         else if (pref == "f"){
             int first,second,third;
-            ss >> first >> second >> third;
-            Face face;
-            face.i = first-1;
-            face.j = second-1;
-            face.k = third-1;
-            resFaces.push_back(face);
+            if(ss >> first >> second >> third){
+                if(ss >> sisa) {cout << "Gagal : Format data face pada file.obj tidak sesuai" << endl; return false;}
+                Face face;
+                face.i = first-1;
+                face.j = second-1;
+                face.k = third-1;
+                resFaces.push_back(face);
+            }
+            else{
+                cout << "Format face tidak sesuai" << endl;
+                return false;
+            }
+            
         }
+        else return false;
         // if(pref != "v" && pref != "f") return false;
     }
     return true;
@@ -175,6 +194,10 @@ class Octree{
                 if(!children[i]->faceIds.empty()){
                     children[i]->buildOctree(children[i]->faceIds,globalFaces,globalVertices,maxDepth);
                 }
+                else{
+                    int anakDepth = children[i]->curDepth;
+                    if(anakDepth <= maxDepth) statTidakDitelusuri[anakDepth]++;
+                }
             }
 
             faceIds.clear();
@@ -191,6 +214,7 @@ void buildResult(Octree* node){
         }
     }
     else{
+        finalDepth = max(finalDepth,node->curDepth);
         if (node->faceIds.empty()) return;
 
         VectorV minP = node->bound.minPoint;
@@ -234,34 +258,17 @@ void buildResult(Octree* node){
     }
     
 }
-
-// int main(){
-//     string path = "../test/cube_clean.obj";
-//     if(loadObject(path,vertices,faces)){
-//         cout << "SUKSES" << endl;
-//         cout << "Banyak vertices : " << vertices.size() << endl;
-//         cout << "Banyak faces : " << faces.size() << endl;
-//         if(!vertices.empty()){
-//             for(auto v : vertices){
-//                 cout << "v " << v.x << " " << v.y << " " <<  v.z << endl;
-//             }
-                
-//             for(auto f : faces){
-//                 cout << "f ";
-//                 cout << f.i << " " << f.j << " " << f.k;
-//                 cout << endl;
-//             }
-//         }
-//     }
-// }
 int main(){
-    string fileName; 
-    cin >> fileName;
-    // string fileName = "teapot";
+
+
+    cout << "Masukkan path input (format .obj) : " ;
+    string path; cin >> path;
+    cout <<endl;
     
-    string path = "../test/" + fileName + ".obj"; 
     if(loadObject(path, vertices, faces)){
+
         cout << "SUKSES MEMBACA FILE!" << endl;
+
         AABB rootBound;
         rootBound.minPoint = {99999.0f, 99999.0f, 99999.0f}; 
         rootBound.maxPoint = {-99999.0f, -99999.0f, -99999.0f}; 
@@ -274,20 +281,45 @@ int main(){
             rootBound.maxPoint.y = max(rootBound.maxPoint.y, v.y);
             rootBound.maxPoint.z = max(rootBound.maxPoint.z, v.z);
         }
+
         vector<int> allFaceIds;
         for(int i = 0; i < faces.size(); i++) allFaceIds.push_back(i);
-        int maxDepth ;
-        // maxDepth = 8;
+        cout << endl;
+        cout << "Masukkan kedalam maksimum dari Octree : " ;
         cin >> maxDepth; 
+        cout << endl;
+
+        statTerbentuk.resize(maxDepth+1,0);
+        statTidakDitelusuri.resize(maxDepth+1,0);
+
         Octree* root = new Octree(rootBound, 0);
         root->buildOctree(allFaceIds, faces, vertices, maxDepth);
 
         buildResult(root);
-        string targetOutput = fileName + "_" + to_string(maxDepth) +"_voxel.obj";
-        ofstream outFile(targetOutput);
-        cout << "Banyak voxel yang terbentuk : " << endl;
+
+        // string targetOutput = "test/"+ fileName + "_" + to_string(maxDepth) +"_voxel.obj";
+        cout << "Banyak voxel yang terbentuk : " << voxelFaces.size()/12 << endl;
         cout << "Banyak vertex yang terbentuk : " << voxelVertices.size() << endl;
         cout << "Banyak faces yang terbentuk : " << voxelFaces.size() << endl;
+        
+        cout << endl;
+        cout << "Statistik node octree yang terbentuk :" << endl;  
+        for(int i = 0 ; i < maxDepth+1; i++) cout << i << " : " << statTerbentuk[i] << endl;
+
+        cout << endl;
+        cout << "Statistik node octree yang tidak perlu ditelusuri : " << endl;
+        for(int i = 0 ; i < maxDepth+1 ; i++) cout << i << " : " << statTidakDitelusuri[i] << endl;
+
+        cout << endl;
+        cout << "Kedalaman Octree : " << finalDepth << endl;
+
+        cout << endl;
+        cout << "Masukkan nama file output : "; 
+        string targetOutput; cin >> targetOutput;
+        targetOutput = "test/" + targetOutput;
+        
+        ofstream outFile(targetOutput);
+  
         if(outFile.is_open()) {
             for(auto v : voxelVertices){
                 outFile << "v " << v.x << " " << v.y << " " << v.z << "\n";
@@ -297,7 +329,7 @@ int main(){
                 outFile << "f " << (f.i + 1) << " " << (f.j + 1) << " " << (f.k + 1) << "\n";
             }
             outFile.close();
-            cout << "berhasil! disimpan di " << targetOutput ;
+            cout << "Berhasil! disimpan di " << targetOutput ;
         } else {
             cout << "Gagal buat output" << endl;
         }
