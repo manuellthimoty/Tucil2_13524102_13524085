@@ -1,4 +1,5 @@
 #include <bits/stdc++.h>
+#include <omp.h>
 
 using namespace std;
 using ll = long long;
@@ -133,7 +134,10 @@ class Octree{
             curDepth = d;
             isLeaf = true;
             for(int i = 0 ; i < 8 ; i++) children[i] = nullptr;
-            if(d > 0) statTerbentuk[d]++;
+            if(d > 0) {
+                #pragma omp atomic
+                statTerbentuk[d]++;
+            }
         }
 
         void subdivide(){
@@ -175,13 +179,18 @@ class Octree{
                 }
             }
 
+            #pragma omp taskgroup
             for(int i = 0  ; i < 8 ; i++){
                 if(!children[i]->faceIds.empty()){
+                    #pragma omp task
                     children[i]->buildOctree(children[i]->faceIds,globalFaces,globalVertices,maxDepth);
                 }
                 else{
                     int anakDepth = children[i]->curDepth;
-                    if(anakDepth <= maxDepth) statTidakDitelusuri[anakDepth]++;
+                    if(anakDepth <= maxDepth) {
+                        #pragma omp atomic
+                        statTidakDitelusuri[anakDepth]++;
+                    }
                 }
             }
 
@@ -244,20 +253,38 @@ void buildResult(Octree* node){
     
 }
 int main(){
+    string lagi;
+    do {
+        // Reset global state untuk iterasi berikutnya
+        vertices.clear();
+        faces.clear();
+        voxelVertices.clear();
+        voxelFaces.clear();
+        statTerbentuk.clear();
+        statTidakDitelusuri.clear();
+        finalDepth = 0;
 
+        // Input file dengan retry jika gagal
+        string path;
+        while(true) {
+            cout << "Masukkan nama file input (dari test/input/, format .obj) : ";
+            string fileName; cin >> fileName;
+            if(fileName.size() < 4 || fileName.substr(fileName.size()-4) != ".obj")
+                fileName += ".obj";
+            path = "test/input/" + fileName;
+            cout << endl;
 
-    cout << "Masukkan path input (format .obj) : " ;
-    string path; cin >> path;
-    cout <<endl;
-    
-    if(loadObject(path, vertices, faces)){
-
-        cout << "SUKSES MEMBACA FILE!" << endl;
+            if(loadObject(path, vertices, faces)) {
+                cout << "SUKSES MEMBACA FILE!" << endl;
+                break;
+            }
+            cout << "File tidak ditemukan, coba lagi." << endl << endl;
+        }
 
         AABB rootBound;
-        rootBound.minPoint = {99999.0f, 99999.0f, 99999.0f}; 
-        rootBound.maxPoint = {-99999.0f, -99999.0f, -99999.0f}; 
-        
+        rootBound.minPoint = {99999.0f, 99999.0f, 99999.0f};
+        rootBound.maxPoint = {-99999.0f, -99999.0f, -99999.0f};
+
         for(auto v : vertices) {
             rootBound.minPoint.x = min(rootBound.minPoint.x, v.x);
             rootBound.minPoint.y = min(rootBound.minPoint.y, v.y);
@@ -268,31 +295,32 @@ int main(){
         }
 
         vector<int> allFaceIds;
-        for(int i = 0; i < faces.size(); i++) allFaceIds.push_back(i);
+        for(int i = 0; i < (int)faces.size(); i++) allFaceIds.push_back(i);
         cout << endl;
         auto start = chrono::high_resolution_clock::now();
-        cout << "Masukkan kedalam maksimum dari Octree : " ;
-        cin >> maxDepth; 
+        cout << "Masukkan kedalaman maksimum dari Octree : ";
+        cin >> maxDepth;
         cout << endl;
 
         statTerbentuk.resize(maxDepth+1,0);
         statTidakDitelusuri.resize(maxDepth+1,0);
 
         Octree* root = new Octree(rootBound, 0);
+        #pragma omp parallel
+        #pragma omp single
         root->buildOctree(allFaceIds, faces, vertices, maxDepth);
 
         buildResult(root);
 
-        // string targetOutput = "test/"+ fileName + "_" + to_string(maxDepth) +"_voxel.obj";
         auto end = chrono::high_resolution_clock::now();
         auto duration = chrono::duration_cast<chrono::milliseconds>(end-start);
 
         cout << "Banyak voxel yang terbentuk : " << voxelFaces.size()/12 << endl;
         cout << "Banyak vertex yang terbentuk : " << voxelVertices.size() << endl;
         cout << "Banyak faces yang terbentuk : " << voxelFaces.size() << endl;
-        
+
         cout << endl;
-        cout << "Statistik node octree yang terbentuk :" << endl;  
+        cout << "Statistik node octree yang terbentuk :" << endl;
         for(int i = 0 ; i < maxDepth+1; i++) cout << i << " : " << statTerbentuk[i] << endl;
 
         cout << endl;
@@ -301,30 +329,42 @@ int main(){
 
         cout << endl;
         cout << "Kedalaman Octree : " << finalDepth << endl;
-        
+
         cout << endl;
         cout << "Durasi Proses : " << duration.count() << " ms" << endl;
 
         cout << endl;
-        cout << "Masukkan nama file output : "; 
-        string targetOutput; cin >> targetOutput;
-        targetOutput = "test/" + targetOutput;
-        
-        ofstream outFile(targetOutput);
-  
-        if(outFile.is_open()) {
-            for(auto v : voxelVertices){
-                outFile << "v " << v.x << " " << v.y << " " << v.z << "\n";
+
+        // Output file dengan retry jika gagal
+        while(true) {
+            cout << "Masukkan nama file output : ";
+            string targetOutput; cin >> targetOutput;
+            if(targetOutput.size() >= 4 && targetOutput.substr(targetOutput.size()-4) == ".obj")
+                targetOutput = targetOutput.substr(0, targetOutput.size()-4);
+            targetOutput = "test/output/" + targetOutput + "_voxel.obj";
+
+            ofstream outFile(targetOutput);
+            if(outFile.is_open()) {
+                for(auto v : voxelVertices){
+                    outFile << "v " << v.x << " " << v.y << " " << v.z << "\n";
+                }
+                for(auto f : voxelFaces){
+                    outFile << "f " << (f.i + 1) << " " << (f.j + 1) << " " << (f.k + 1) << "\n";
+                }
+                outFile.close();
+                cout << "Berhasil! disimpan di " << targetOutput << endl;
+                break;
+            } else {
+                cout << "Gagal menyimpan output, coba lagi." << endl;
             }
-            for(auto f : voxelFaces){
-                // .obj dimulai dari 1, jadi kita tambah 1
-                outFile << "f " << (f.i + 1) << " " << (f.j + 1) << " " << (f.k + 1) << "\n";
-            }
-            outFile.close();
-            cout << "Berhasil! disimpan di " << targetOutput ;
-        } else {
-            cout << "Gagal buat output" << endl;
         }
-    }
+
+        cout << endl;
+        cout << "Mau voxel lagi? (y/n) : ";
+        cin >> lagi;
+        cout << endl;
+
+    } while(lagi == "y" || lagi == "Y");
+
     return 0;
 }
