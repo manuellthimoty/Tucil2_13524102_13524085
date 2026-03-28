@@ -1,6 +1,7 @@
 #include <bits/stdc++.h>
 
 using namespace std;
+using ll = long long;
 
 // struct untuk point
 struct VectorV{
@@ -10,17 +11,22 @@ struct VectorV{
 struct Face{
     int i,j,k;
 };
-using ll = long long;
+
 int countV = 0;
+int finalDepth = 0;
+int maxDepth;
+
 vector<VectorV> vertices;
 vector<Face> faces;
+
 vector<vector<int>> resFaceIds;
+
 vector<VectorV> voxelVertices;
 vector<Face> voxelFaces;
-int maxDepth;
+
 vector<ll> statTerbentuk;
 vector<ll> statTidakDitelusuri;
-int finalDepth = 0;
+
 bool loadObject(const string& path, vector<VectorV> &resVertices, vector<Face> &resFaces){
     ifstream file(path);
     if(!file.is_open()){
@@ -65,7 +71,6 @@ bool loadObject(const string& path, vector<VectorV> &resVertices, vector<Face> &
             
         }
         else return false;
-        // if(pref != "v" && pref != "f") return false;
     }
     return true;
 }
@@ -78,23 +83,7 @@ struct AABB{
     }
 };
 
-AABB getFaceAABB(const Face& face, const vector<VectorV>& globalVertices){
-    VectorV vi = globalVertices[face.i];
-    VectorV vj = globalVertices[face.j];
-    VectorV vk = globalVertices[face.k];
-    
-    AABB res;
-    res.minPoint.x = min({vi.x, vj.x, vk.x});
-    res.maxPoint.x = max({vi.x, vj.x, vk.x});
 
-    res.minPoint.y = min({vi.y, vj.y, vk.y});
-    res.maxPoint.y = max({vi.y, vj.y, vk.y});
-
-    res.minPoint.z = min({vi.z, vj.z, vk.z});
-    res.maxPoint.z = max({vi.z, vj.z, vk.z});
-    
-    return res;
-}
 // vektor bantuan untuk SAT
 VectorV subVec(const VectorV& a, const VectorV& b) { return {a.x - b.x, a.y - b.y, a.z - b.z}; }
 VectorV crossProduct(const VectorV& a, const VectorV& b) {return {a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x}; }
@@ -184,10 +173,6 @@ class Octree{
                         children[i]->faceIds.push_back(faceId);
                     }
                 }
-                // AABB curFace = getFaceAABB(globalFaces[faceId],globalVertices);
-                // for(int i = 0 ; i < 8 ; i++){
-                //     if(children[i]->bound.intersect(curFace)) children[i]->faceIds.push_back(faceId);
-                // }
             }
 
             for(int i = 0  ; i < 8 ; i++){
@@ -285,6 +270,7 @@ int main(){
         vector<int> allFaceIds;
         for(int i = 0; i < faces.size(); i++) allFaceIds.push_back(i);
         cout << endl;
+        auto start = chrono::high_resolution_clock::now();
         cout << "Masukkan kedalam maksimum dari Octree : " ;
         cin >> maxDepth; 
         cout << endl;
@@ -298,6 +284,9 @@ int main(){
         buildResult(root);
 
         // string targetOutput = "test/"+ fileName + "_" + to_string(maxDepth) +"_voxel.obj";
+        auto end = chrono::high_resolution_clock::now();
+        auto duration = chrono::duration_cast<chrono::milliseconds>(end-start);
+
         cout << "Banyak voxel yang terbentuk : " << voxelFaces.size()/12 << endl;
         cout << "Banyak vertex yang terbentuk : " << voxelVertices.size() << endl;
         cout << "Banyak faces yang terbentuk : " << voxelFaces.size() << endl;
@@ -312,6 +301,9 @@ int main(){
 
         cout << endl;
         cout << "Kedalaman Octree : " << finalDepth << endl;
+        
+        cout << endl;
+        cout << "Durasi Proses : " << duration.count() << " ms" << endl;
 
         cout << endl;
         cout << "Masukkan nama file output : "; 
