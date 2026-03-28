@@ -70,7 +70,7 @@ bool loadObject(const string& path, vector<VectorV> &resVertices, vector<Face> &
             }
             
         }
-        else return false;
+        // else return false;
     }
     return true;
 }
